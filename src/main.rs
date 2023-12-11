@@ -2,13 +2,16 @@
 extern crate rocket;
 
 use git2::Repository;
+use rocket_analytics::Analytics;
 
+mod pull;
 
 use rocket::{
     fairing::AdHoc,
-    fs::{relative, FileServer},
+    fs::{NamedFile, relative, FileServer},
     Request,
 };
+use std::path::{PathBuf, Path};
 
 fn git_refresh() {
     let url = "https://github.com/uberfig/ivytime.gay.git";
@@ -22,6 +25,12 @@ fn git_refresh() {
             }
         },
     };
+
+    //git pull
+    let remote_branch = "main";
+    let mut remote = repo.find_remote("origin").unwrap();
+    let fetch_commit = pull::do_fetch(&repo, &[remote_branch], &mut remote).unwrap();
+    let _ = pull::do_merge(&repo, &remote_branch, fetch_commit);
 }
 
 #[post("/")]
@@ -29,9 +38,12 @@ fn refresh() {
     git_refresh();
 }
 
+
 #[catch(404)]
-fn not_found(req: &Request) -> String {
-    format!("I couldn't find '{}'. Try something else?", req.uri())
+async fn not_found() -> Option<NamedFile> {
+    let path = Path::new(relative!("static/public/404.html"));
+
+    NamedFile::open(path).await.ok()
 }
 
 #[launch]
@@ -40,4 +52,6 @@ fn rocket() -> _ {
     rocket::build()
     .mount("/", FileServer::from(relative!("static/public")))
     .mount("/refresh", routes![refresh])
+    .attach(Analytics::new(include_str!("../secrets/apiKey").to_string()))
+    .register("/", catchers![not_found])
 }
