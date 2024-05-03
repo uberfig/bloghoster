@@ -11,7 +11,12 @@ sqlx = { version = "0.7.4", features = ["runtime-tokio", "sqlite", "macros"]}
 serde = "1.0.200"
 serde_json = "1.0.116"
 sha2 = "0.10.8"
+tera = "1.19.1"
 
 [dependencies.rocket_db_pools]
 version = "0.1.0"
 features = ["sqlx_sqlite"]
+
+[dependencies.rocket_dyn_templates]
+version = "0.1.0"
+features = ["tera"]

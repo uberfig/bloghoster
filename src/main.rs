@@ -10,10 +10,13 @@ mod pull;
 use analytics::Db;
 
 use rocket::{
-    fairing::{self, AdHoc}, fs::{relative, FileServer, NamedFile}, http::hyper::request, Build, Request, Rocket
+    // fairing::{self, AdHoc}, fs::{relative, FileServer, NamedFile}, http::hyper::request, Build, Request, Rocket
+    fairing::{self, AdHoc}, fs::{relative, FileServer, NamedFile}, Build, Rocket
 };
 use rocket_db_pools::Database;
-use std::path::{Path, PathBuf};
+use rocket_dyn_templates::Template;
+// use std::path::{Path, PathBuf};
+use std::path::Path;
 
 fn git_refresh() {
     let url = "https://github.com/uberfig/ivytime.gay.git";
@@ -63,7 +66,6 @@ pub fn stage() -> AdHoc {
         rocket
             .attach(Db::init())
             .attach(AdHoc::try_on_ignite("SQLx Migrations", run_migrations))
-        // .mount("/sqlx", routes![list, create, read, delete, destroy])
     })
 }
 
@@ -71,15 +73,11 @@ pub fn stage() -> AdHoc {
 fn rocket() -> _ {
     git_refresh();
     rocket::build()
+        .attach(Template::fairing())
         .attach(stage())
         .mount("/", FileServer::from(relative!("static/public")))
+        .mount("/analytics", analytics::routes())
         .mount("/refresh", routes![refresh])
-        // .attach(Analytics::new(include_str!("../secrets/apiKey").to_string()))
         .attach(analytics::Analytics::new())
-        .attach(AdHoc::on_response("alalytics", |request, response| {
-            Box::pin(async move {
-                // do something with the request and pending response...
-            })
-        }))
         .register("/", catchers![not_found])
 }

@@ -1,18 +1,16 @@
-use chrono::Utc;
-// use lazy_static::lazy_static;
-// use reqwest::blocking::Client;
+// use chrono::Utc;
 use rocket::fairing::{Fairing, Info, Kind};
-use rocket::http::Status;
-use rocket::request::{FromRequest, Outcome};
-use rocket::{Data, Request, Response};
+// use rocket::http::Status;
+use rocket::request::FromRequest;
+use rocket::response::{Flash, Redirect};
+// use rocket::request::{FromRequest, Outcome};
+use rocket::{Request, Response};
+use rocket_dyn_templates::{context, Template};
 use serde::{Deserialize, Serialize};
-// use serde::Serialize;
-// use std::sync::Mutex;
-// use std::thread::spawn;
-use std::time::Instant;
-use sha2::{Sha256, Sha512, Digest};
+use sha2::{Sha256, Digest};
 
 use rocket_db_pools::{Connection, Database, Initializer};
+use sqlx::Acquire;
 
 #[derive(Database)]
 #[database("sqlx")]
@@ -74,33 +72,27 @@ impl Method {
 
 #[derive(Debug, Clone)]
 struct RequestData {
-    hostname: String,
     ip_address: String,
     path: String,
     user_agent: String,
     method: String,
     status: u16,
-    created_at: String,
 }
 
 impl RequestData {
     pub fn new(
-        hostname: String,
         ip_address: String,
         path: String,
         user_agent: String,
         method: String,
         status: u16,
-        created_at: String,
     ) -> Self {
         Self {
-            hostname,
             ip_address,
             path,
             user_agent,
             method,
             status,
-            created_at,
         }
     }
 }
@@ -109,7 +101,6 @@ type StringMapper = dyn for<'a, 'r> Fn(&'r Request<'a>, &'r Response) -> String 
 
 #[derive(Default)]
 struct Mappers {
-    hostname: Option<Box<StringMapper>>,
     ip_address: Option<Box<StringMapper>>,
     path: Option<Box<StringMapper>>,
 }
@@ -147,11 +138,46 @@ async fn log_request(request_data: RequestData, mut conn: Connection<Db>) {
 
     let method = Method::from_text(&request_data.method).to_int();
 
-    let result = sqlx::query!(
-        "INSERT INTO requests (ip_address_hash, path, method, status, created_at) VALUES($1, $2, $3, $4, $5) RETURNING id",
-        ip_address_hash, request_data.path, method, request_data.status, time
-    ).fetch_one(&mut **conn)
+
+    let mut val = conn.into_inner();
+
+    let mut transaction = val.begin().await.unwrap();
+
+    let _result = sqlx::query!(
+        "INSERT OR IGNORE INTO paths (path, unique_visitors, total_requests) VALUES($1, $2, $3)",
+        request_data.path, 1, 1
+    ).execute(&mut *transaction)
     .await;
+
+    let _result = sqlx::query!(
+        "UPDATE paths SET total_requests = total_requests + 1 WHERE path = $1",
+        request_data.path
+    ).execute(&mut *transaction)
+    .await;
+
+    let unique_result = sqlx::query!(
+        "SELECT id FROM requests WHERE ip_address_hash = $1 LIMIT 1",
+        ip_address_hash
+    ).fetch_optional(&mut *transaction)
+    .await;
+
+    let unique = unique_result.expect("analytics database failure").is_none();
+
+    if unique {
+        let _result = sqlx::query!(
+            "UPDATE paths SET unique_visitors = unique_visitors + 1 WHERE path = $1",
+            request_data.path
+        ).execute(&mut *transaction)
+        .await;
+    }
+
+    let _result = sqlx::query!(
+        "INSERT INTO requests (ip_address_hash, path, user_agent, method, status, created_at) VALUES($1, $2, $3, $4, $5, $6) RETURNING id",
+        ip_address_hash, request_data.path, request_data.user_agent, method, request_data.status, time
+    ).fetch_one(&mut *transaction)
+    .await;
+
+    let _x = transaction.commit().await;
 
 }
 
@@ -165,12 +191,6 @@ impl Fairing for Analytics {
     }
 
     async fn on_response<'r>(&self, req: &'r Request<'_>, res: &mut Response<'r>) {
-        let hostname = self
-            .mappers
-            .hostname
-            .as_ref()
-            .map(|m| m(req, res))
-            .unwrap_or_else(|| req.host().unwrap().to_string());
         let ip_address = self
             .mappers
             .ip_address
@@ -191,13 +211,11 @@ impl Fairing for Analytics {
             .unwrap_or_else(|| req.uri().path().to_string());
 
         let request_data = RequestData::new(
-            hostname,
             ip_address,
             path,
             user_agent,
             method,
             res.status().code,
-            Utc::now().to_rfc3339(),
         );
 
         let conn = Connection::<Db>::from_request(req)
@@ -208,5 +226,15 @@ impl Fairing for Analytics {
     }
 }
 
+#[get("/")]
+async fn analytics_index() -> Result<Template, Flash<Redirect>> {
+    Ok(Template::render("analytics/index", context! { test: "value" }))
+    // Err(Flash::error(Redirect::to("/"), "unable to access analytics"))
+}
 
 
+pub fn routes() -> Vec<rocket::Route>{
+    routes![
+        analytics_index
+    ]
+}
