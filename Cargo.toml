@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-rocket = "0.5.0"
+rocket = {version = "0.5.0", features = ["json"]}
 git2 = "0.18.1"
 chrono = "0.4.38"
 sqlx = { version = "0.7.4", features = ["runtime-tokio", "sqlite", "macros"]}
@@ -12,6 +12,7 @@ serde = "1.0.200"
 serde_json = "1.0.116"
 sha2 = "0.10.8"
 tera = "1.19.1"
+rocket_contrib = {version = "0.4.11", features = ["json"]}
 
 [dependencies.rocket_db_pools]
 version = "0.1.0"

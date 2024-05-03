@@ -1,13 +1,15 @@
 // use chrono::Utc;
 use rocket::fairing::{Fairing, Info, Kind};
+use rocket::http::Status;
 // use rocket::http::Status;
 use rocket::request::FromRequest;
 use rocket::response::{Flash, Redirect};
+use rocket::serde::json::Json;
 // use rocket::request::{FromRequest, Outcome};
 use rocket::{Request, Response};
 use rocket_dyn_templates::{context, Template};
 use serde::{Deserialize, Serialize};
-use sha2::{Sha256, Digest};
+use sha2::{Digest, Sha256};
 
 use rocket_db_pools::{Connection, Database, Initializer};
 use sqlx::Acquire;
@@ -119,7 +121,7 @@ impl Analytics {
 }
 
 async fn log_request(request_data: RequestData, mut conn: Connection<Db>) {
-    dbg!(&request_data);
+    // dbg!(&request_data);
 
     use std::time::SystemTime;
 
@@ -138,27 +140,30 @@ async fn log_request(request_data: RequestData, mut conn: Connection<Db>) {
 
     let method = Method::from_text(&request_data.method).to_int();
 
-
     let mut val = conn.into_inner();
 
     let mut transaction = val.begin().await.unwrap();
 
-    let _result = sqlx::query!(
+    let _result =
+        sqlx::query!(
         "INSERT OR IGNORE INTO paths (path, unique_visitors, total_requests) VALUES($1, $2, $3)",
         request_data.path, 1, 1
-    ).execute(&mut *transaction)
-    .await;
+    )
+        .execute(&mut *transaction)
+        .await;
 
     let _result = sqlx::query!(
         "UPDATE paths SET total_requests = total_requests + 1 WHERE path = $1",
         request_data.path
-    ).execute(&mut *transaction)
+    )
+    .execute(&mut *transaction)
     .await;
 
     let unique_result = sqlx::query!(
         "SELECT id FROM requests WHERE ip_address_hash = $1 LIMIT 1",
         ip_address_hash
-    ).fetch_optional(&mut *transaction)
+    )
+    .fetch_optional(&mut *transaction)
     .await;
 
     let unique = unique_result.expect("analytics database failure").is_none();
@@ -167,7 +172,8 @@ async fn log_request(request_data: RequestData, mut conn: Connection<Db>) {
         let _result = sqlx::query!(
             "UPDATE paths SET unique_visitors = unique_visitors + 1 WHERE path = $1",
             request_data.path
-        ).execute(&mut *transaction)
+        )
+        .execute(&mut *transaction)
         .await;
     }
 
@@ -178,7 +184,6 @@ async fn log_request(request_data: RequestData, mut conn: Connection<Db>) {
     .await;
 
     let _x = transaction.commit().await;
-
 }
 
 #[rocket::async_trait]
@@ -210,13 +215,8 @@ impl Fairing for Analytics {
             .map(|m| m(req, res))
             .unwrap_or_else(|| req.uri().path().to_string());
 
-        let request_data = RequestData::new(
-            ip_address,
-            path,
-            user_agent,
-            method,
-            res.status().code,
-        );
+        let request_data =
+            RequestData::new(ip_address, path, user_agent, method, res.status().code);
 
         let conn = Connection::<Db>::from_request(req)
             .await
@@ -225,16 +225,57 @@ impl Fairing for Analytics {
         log_request(request_data, conn).await;
     }
 }
-
-#[get("/")]
-async fn analytics_index() -> Result<Template, Flash<Redirect>> {
-    Ok(Template::render("analytics/index", context! { test: "value" }))
-    // Err(Flash::error(Redirect::to("/"), "unable to access analytics"))
+// use rocket::response::content;
+// use rocket_contrib::json;
+#[derive(Serialize)]
+struct Visits {
+    pub path: String,
+    pub unique_visitors: i64,
+    pub total_requests: i64,
 }
 
+#[get("/visits/<path>")]
+async fn visits(mut db: Connection<Db>, path: String) -> Result<Json<Visits>, Status> {
+    let path: String = path.replace("%2F", "/");
 
-pub fn routes() -> Vec<rocket::Route>{
-    routes![
-        analytics_index
-    ]
+    let unique_result =
+        sqlx::query_as!(Visits, "SELECT * FROM paths WHERE path = $1 LIMIT 1", path)
+            .fetch_optional(&mut **db)
+            .await;
+
+    match unique_result {
+        Ok(x) => match x {
+            Some(x) => {
+                use rocket::serde::json::Json;
+                Ok(Json(x))
+            }
+            None => Err(Status::NotFound),
+        },
+        Err(x) => {
+            dbg!(x);
+            Err(Status::InternalServerError)
+        }
+    }
+}
+
+#[get("/")]
+async fn analytics_index(mut db: Connection<Db>) -> Result<Template, Status> {
+    let routes = sqlx::query_as!(
+        Visits,
+        "SELECT * FROM paths ORDER BY unique_visitors DESC LIMIT 15"
+    )
+    .fetch_all(&mut **db)
+    .await;
+
+    match routes {
+        Ok(x) => Ok(Template::render(
+            "analytics/index",
+            context! { routes: x },
+        )),
+        Err(x) => Err(Status::InternalServerError),
+    }
+}
+
+pub fn routes() -> Vec<rocket::Route> {
+    routes![analytics_index, visits,]
 }

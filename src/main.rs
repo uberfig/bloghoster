@@ -11,7 +11,10 @@ use analytics::Db;
 
 use rocket::{
     // fairing::{self, AdHoc}, fs::{relative, FileServer, NamedFile}, http::hyper::request, Build, Request, Rocket
-    fairing::{self, AdHoc}, fs::{relative, FileServer, NamedFile}, Build, Rocket
+    fairing::{self, AdHoc},
+    fs::{relative, FileServer, NamedFile},
+    Build,
+    Rocket,
 };
 use rocket_db_pools::Database;
 use rocket_dyn_templates::Template;
@@ -33,7 +36,8 @@ fn git_refresh() {
     let remote_branch = "main";
     let mut remote = repo.find_remote("origin").unwrap();
     let fetch_commit = pull::do_fetch(&repo, &[remote_branch], &mut remote).unwrap();
-    let _ = pull::do_merge(&repo, &remote_branch, fetch_commit);
+    let x = pull::do_merge(&repo, &remote_branch, fetch_commit);
+    dbg!(x);
 }
 
 #[post("/")]
