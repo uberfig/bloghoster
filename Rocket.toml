@@ -1,8 +1,15 @@
 [default.databases.sqlx]
 url = "db/analytics.sqlite"
 timeout = 10
-port = 8080
 
 [release.databases.sqlx]
 url = "db/analytics.sqlite"
+
+[development]
+port = 8080
+
+[staging]
+port = 8080
+
+[production]
 port = 8080
