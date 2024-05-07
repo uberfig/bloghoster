@@ -1,17 +1,18 @@
 
 CREATE TABLE paths (
-	path				TEXT NOT NULL PRIMARY KEY UNIQUE,
-	unique_visitors		INTEGER NOT NULL DEFAULT 1,
-	total_requests		INTEGER NOT NULL DEFAULT 1
+	path_id 			INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+	path				TEXT NOT NULL UNIQUE,
+	unique_visitors		INTEGER NOT NULL DEFAULT 0,
+	total_requests		INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE requests (
 	id 					INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
 	ip_address_hash		VARCHAR(256) NOT NULL,
-	path				TEXT NOT NULL,
+	path_id				INTEGER NOT NULL,
 	user_agent			TEXT NOT NULL,
 	method				UNSIGNED TINYINT NOT NULL,
 	status				UNSIGNED SMALLINT NOT NULL,
 	created_at			UNSIGNED INTEGER NOT NULL,
-	FOREIGN KEY(path) 	REFERENCES paths(path)
+	FOREIGN KEY(path_id) 	REFERENCES paths(path_id)
 );

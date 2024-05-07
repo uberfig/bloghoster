@@ -26,7 +26,7 @@ fn git_refresh() {
 
     let repo = match Repository::open("./static") {
         Ok(repo) => repo,
-        Err(e) => match Repository::clone(url, "./static") {
+        Err(_e) => match Repository::clone(url, "./static") {
             Ok(repo) => repo,
             Err(e) => panic!("failed to clone: {}", e),
         },
@@ -36,8 +36,8 @@ fn git_refresh() {
     let remote_branch = "main";
     let mut remote = repo.find_remote("origin").unwrap();
     let fetch_commit = pull::do_fetch(&repo, &[remote_branch], &mut remote).unwrap();
-    let x = pull::do_merge(&repo, &remote_branch, fetch_commit);
-    dbg!(x);
+    let _x = pull::do_merge(&repo, &remote_branch, fetch_commit);
+    // dbg!(x);
 }
 
 #[post("/")]

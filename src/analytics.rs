@@ -1,9 +1,9 @@
-// use chrono::Utc;
+use chrono::{Datelike, Utc};
 use rocket::fairing::{Fairing, Info, Kind};
 use rocket::http::Status;
 // use rocket::http::Status;
 use rocket::request::FromRequest;
-use rocket::response::{Flash, Redirect};
+// use rocket::response::{Flash, Redirect};
 use rocket::serde::json::Json;
 // use rocket::request::{FromRequest, Outcome};
 use rocket::{Request, Response};
@@ -125,6 +125,8 @@ async fn log_request(request_data: RequestData, mut conn: Connection<Db>) {
 
     use std::time::SystemTime;
 
+    let now = Utc::now();
+
     let time = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap()
@@ -144,13 +146,28 @@ async fn log_request(request_data: RequestData, mut conn: Connection<Db>) {
 
     let mut transaction = val.begin().await.unwrap();
 
-    let _result =
-        sqlx::query!(
-        "INSERT OR IGNORE INTO paths (path, unique_visitors, total_requests) VALUES($1, $2, $3)",
-        request_data.path, 1, 1
+    let path_id = sqlx::query!(
+        "Select path_id FROM paths WHERE path = $1",
+        request_data.path
     )
-        .execute(&mut *transaction)
-        .await;
+    .fetch_optional(&mut *transaction)
+    .await;
+
+    let path_id = match path_id.unwrap() {
+        Some(x) => {
+            x.path_id
+        }
+        None => {
+            let result =
+            sqlx::query!(
+                "INSERT INTO paths (path, unique_visitors, total_requests) VALUES($1, $2, $3) RETURNING path_id",
+                request_data.path, 0, 0
+            )
+                .fetch_one(&mut *transaction)
+                .await;
+            result.unwrap().path_id
+        },
+    };
 
     let _result = sqlx::query!(
         "UPDATE paths SET total_requests = total_requests + 1 WHERE path = $1",
@@ -160,8 +177,8 @@ async fn log_request(request_data: RequestData, mut conn: Connection<Db>) {
     .await;
 
     let unique_result = sqlx::query!(
-        "SELECT id FROM requests WHERE ip_address_hash = $1 LIMIT 1",
-        ip_address_hash
+        "SELECT id FROM requests WHERE ip_address_hash = $1 AND path_id = $2 LIMIT 1",
+        ip_address_hash, path_id
     )
     .fetch_optional(&mut *transaction)
     .await;
@@ -178,10 +195,14 @@ async fn log_request(request_data: RequestData, mut conn: Connection<Db>) {
     }
 
     let _result = sqlx::query!(
-        "INSERT INTO requests (ip_address_hash, path, user_agent, method, status, created_at) VALUES($1, $2, $3, $4, $5, $6) RETURNING id",
-        ip_address_hash, request_data.path, request_data.user_agent, method, request_data.status, time
+        "INSERT INTO requests (ip_address_hash, path_id, user_agent, method, status, created_at) VALUES($1, $2, $3, $4, $5, $6) RETURNING id",
+        ip_address_hash, path_id, request_data.user_agent, method, request_data.status, time
     ).fetch_one(&mut *transaction)
     .await;
+
+    let date = format!("{}:{}:{}", now.year(), now.month(), now.day());
+
+    dbg!(date);
 
     let _x = transaction.commit().await;
 }
@@ -229,6 +250,7 @@ impl Fairing for Analytics {
 // use rocket_contrib::json;
 #[derive(Serialize)]
 struct Visits {
+    pub path_id: i64,
     pub path: String,
     pub unique_visitors: i64,
     pub total_requests: i64,
@@ -268,11 +290,8 @@ async fn analytics_index(mut db: Connection<Db>) -> Result<Template, Status> {
     .await;
 
     match routes {
-        Ok(x) => Ok(Template::render(
-            "analytics/index",
-            context! { routes: x },
-        )),
-        Err(x) => Err(Status::InternalServerError),
+        Ok(x) => Ok(Template::render("analytics/index", context! { routes: x })),
+        Err(_) => Err(Status::InternalServerError),
     }
 }
 
