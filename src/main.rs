@@ -77,6 +77,7 @@ pub fn stage() -> AdHoc {
 fn rocket() -> _ {
     git_refresh();
     rocket::build()
+        .configure(rocket::Config::figment().merge(("port", 8080)))
         .attach(Template::fairing())
         .attach(stage())
         .mount("/", FileServer::from(relative!("static/public")))
