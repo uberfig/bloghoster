@@ -7,4 +7,4 @@ url = "db/analytics.sqlite"
 
 [global]
 port = 8080
-address = "ivytime.gay"
+# address = "ivytime.gay"
