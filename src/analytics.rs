@@ -120,7 +120,6 @@ impl Analytics {
 }
 
 async fn log_request(request_data: RequestData, mut conn: Connection<Db>) {
-    // dbg!(&request_data);
 
     use std::time::SystemTime;
 
@@ -131,7 +130,7 @@ async fn log_request(request_data: RequestData, mut conn: Connection<Db>) {
 
     let mut hasher = Sha256::new();
 
-    dbg!(&request_data.ip_address);
+    // dbg!(&request_data.ip_address);
 
     hasher.update(request_data.ip_address);
 
