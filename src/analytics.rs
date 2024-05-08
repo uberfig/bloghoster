@@ -1,4 +1,3 @@
-use chrono::{Datelike, Utc};
 use rocket::fairing::{Fairing, Info, Kind};
 use rocket::http::Status;
 // use rocket::http::Status;
@@ -125,14 +124,14 @@ async fn log_request(request_data: RequestData, mut conn: Connection<Db>) {
 
     use std::time::SystemTime;
 
-    let now = Utc::now();
-
     let time = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap()
         .as_millis() as i64;
 
     let mut hasher = Sha256::new();
+
+    dbg!(&request_data.ip_address);
 
     hasher.update(request_data.ip_address);
 
@@ -199,10 +198,6 @@ async fn log_request(request_data: RequestData, mut conn: Connection<Db>) {
         ip_address_hash, path_id, request_data.user_agent, method, request_data.status, time
     ).fetch_one(&mut *transaction)
     .await;
-
-    let date = format!("{}:{}:{}", now.year(), now.month(), now.day());
-
-    dbg!(date);
 
     let _x = transaction.commit().await;
 }
