@@ -9,6 +9,7 @@ use rocket::{Request, Response};
 use rocket_dyn_templates::{context, Template};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use rocket::response::Redirect;
 
 use rocket_db_pools::{Connection, Database, Initializer};
 use sqlx::Acquire;
@@ -269,9 +270,38 @@ struct Visits {
     pub total_requests: i64,
 }
 
-#[get("/visits/<path>")]
-async fn visits(mut db: Connection<Db>, path: String) -> Result<Json<Visits>, Status> {
-    let path: String = path.replace("%2F", "/");
+#[get("/visits/id/<id>")]
+async fn visits_id(mut db: Connection<Db>, id: i32) -> Result<Json<Visits>, Status> {
+
+    let unique_result =
+        sqlx::query_as!(Visits, "SELECT * FROM paths WHERE path_id = $1 LIMIT 1", id)
+            .fetch_optional(&mut **db)
+            .await;
+
+    match unique_result {
+        Ok(x) => match x {
+            Some(x) => {
+                use rocket::serde::json::Json;
+                Ok(Json(x))
+            }
+            None => Err(Status::NotFound),
+        },
+        Err(x) => {
+            dbg!(x);
+            Err(Status::InternalServerError)
+        }
+    }
+}
+
+#[get("/visits/path/<path>")]
+async fn visits_path(mut db: Connection<Db>, path: String) -> Result<Json<Visits>, Status> {
+    use rocket::http::RawStr;
+    let path = RawStr::new(&path).percent_decode();
+
+    let path = match path {
+        Ok(x) => RawStr::from_cow_str(x).as_str().to_owned(),
+        Err(_) => {return Err(Status::BadRequest)},
+    };
 
     let unique_result =
         sqlx::query_as!(Visits, "SELECT * FROM paths WHERE path = $1 LIMIT 1", path)
@@ -293,21 +323,46 @@ async fn visits(mut db: Connection<Db>, path: String) -> Result<Json<Visits>, St
     }
 }
 
-#[get("/")]
-async fn analytics_index(mut db: Connection<Db>) -> Result<Template, Status> {
+#[get("/<page>")]
+async fn analytics_page_view(mut db: Connection<Db>, page: u32) -> Result<Template, Status> {
+
+    let page_limit = 15;
+    let ofset = page_limit * (page-1);
+
+    let amount = sqlx::query!(
+        "SELECT COUNT(1) as count FROM paths"
+    )
+    .fetch_one(&mut **db)
+    .await
+    .unwrap();
+
+    let mut total_pages = amount.count / page_limit as i32;
+    let remainder =  amount.count - (total_pages * page_limit as i32);
+    if remainder > 0 {
+        total_pages += 1;
+    }
+    
     let routes = sqlx::query_as!(
         Visits,
-        "SELECT * FROM paths ORDER BY unique_visitors DESC LIMIT 15"
+        "SELECT * FROM paths ORDER BY total_requests DESC LIMIT $1 OFFSET $2",
+        page_limit, ofset
     )
     .fetch_all(&mut **db)
     .await;
 
     match routes {
-        Ok(x) => Ok(Template::render("analytics/index", context! { routes: x })),
+        Ok(x) => {
+            return Ok(Template::render("analytics/index", context! { routes: x, page: page, total_pages: total_pages }));
+        },
         Err(_) => Err(Status::InternalServerError),
     }
 }
 
+#[get("/")]
+fn analytics_index() -> Redirect {
+    Redirect::to(uri!("analytics/1"))
+}
+
 pub fn routes() -> Vec<rocket::Route> {
-    routes![analytics_index, visits,]
+    routes![analytics_index, visits_path, visits_id, analytics_page_view,]
 }

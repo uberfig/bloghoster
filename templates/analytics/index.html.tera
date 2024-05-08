@@ -28,6 +28,11 @@
   <section class="section">
     <div class="container">
         <div class="analytics">
+          <blockquote>
+            <p>note: unique visitor tracking is currently not functional if running behind a reverse proxy</p>
+          </blockquote>
+          
+
             {% for route in routes %}
                 <hr>
 
@@ -41,6 +46,19 @@
                                 
             {% endfor %}
             <hr>
+
+            <div class="inline">
+
+              {% for i in range(end=total_pages) %}
+
+              <a class="text" href="/analytics/{{ i + 1 }}">
+                [{{ i + 1 }}]
+              </a>
+
+              {% endfor %}
+              
+            </div>
+
         </div>
     </div>
   </section>
