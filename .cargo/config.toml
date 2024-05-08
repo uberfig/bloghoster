@@ -1,5 +1,2 @@
-[build]
-target-dir = "."
-
 [package]
 include = ["/db/analytics.sqlite", "/static/*", "/templates/*"]
