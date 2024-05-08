@@ -175,9 +175,28 @@ async fn log_request(request_data: RequestData, mut conn: Connection<Db>) {
     .execute(&mut *transaction)
     .await;
 
+    let visitor_id = sqlx::query!(
+        "SELECT visitor_id FROM visitors WHERE ip_address_hash = $1 LIMIT 1",
+        ip_address_hash
+    )
+    .fetch_optional(&mut *transaction)
+    .await.expect("database error");
+
+    let visitor_id = match visitor_id {
+        Some(x) => x.visitor_id,
+        None => {
+            sqlx::query!(
+                "INSERT INTO visitors (ip_address_hash) VALUES($1) RETURNING visitor_id",
+                ip_address_hash
+            )
+                .fetch_one(&mut *transaction)
+                .await.expect("database error").visitor_id
+        },
+    };
+
     let unique_result = sqlx::query!(
-        "SELECT id FROM requests WHERE ip_address_hash = $1 AND path_id = $2 LIMIT 1",
-        ip_address_hash, path_id
+        "SELECT id FROM requests WHERE visitor_id = $1 AND path_id = $2 LIMIT 1",
+        visitor_id, path_id
     )
     .fetch_optional(&mut *transaction)
     .await;
@@ -194,8 +213,8 @@ async fn log_request(request_data: RequestData, mut conn: Connection<Db>) {
     }
 
     let _result = sqlx::query!(
-        "INSERT INTO requests (ip_address_hash, path_id, user_agent, method, status, created_at) VALUES($1, $2, $3, $4, $5, $6) RETURNING id",
-        ip_address_hash, path_id, request_data.user_agent, method, request_data.status, time
+        "INSERT INTO requests (visitor_id, path_id, user_agent, method, status, created_at) VALUES($1, $2, $3, $4, $5, $6) RETURNING id",
+        visitor_id, path_id, request_data.user_agent, method, request_data.status, time
     ).fetch_one(&mut *transaction)
     .await;
 

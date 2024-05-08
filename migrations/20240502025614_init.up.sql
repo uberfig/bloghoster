@@ -1,4 +1,9 @@
 
+CREATE TABLE visitors (
+	visitor_id 			INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+	ip_address_hash		VARCHAR(256) NOT NULL
+);
+
 CREATE TABLE paths (
 	path_id 			INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
 	path				TEXT NOT NULL UNIQUE,
@@ -8,11 +13,12 @@ CREATE TABLE paths (
 
 CREATE TABLE requests (
 	id 					INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-	ip_address_hash		VARCHAR(256) NOT NULL,
+	visitor_id			INTEGER NOT NULL,
 	path_id				INTEGER NOT NULL,
 	user_agent			TEXT NOT NULL,
 	method				UNSIGNED TINYINT NOT NULL,
 	status				UNSIGNED SMALLINT NOT NULL,
 	created_at			UNSIGNED INTEGER NOT NULL,
-	FOREIGN KEY(path_id) 	REFERENCES paths(path_id)
+	FOREIGN KEY(path_id) 	REFERENCES paths(path_id),
+	FOREIGN KEY(visitor_id) 	REFERENCES visitors(visitor_id)
 );
