@@ -37,10 +37,13 @@
                 <hr>
 
                 <div class="inline">
-                    <h2>{{route.path}}</h2>
+                    <a href="/analytics/path/id/{{ route.path_id }}">
+                      <h2>{{route.path}}</h2>
+                    </a>
+                    
                     <div>
-                        <p>unique visitors: {{route.unique_visitors}}</p>
                         <p>total requests: {{route.total_requests}}</p>
+                        <p>unique visitors: {{route.unique_visitors}}</p>
                     </div>
                 </div>
                                 

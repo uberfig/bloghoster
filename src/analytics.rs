@@ -12,7 +12,7 @@ use sha2::{Digest, Sha256};
 use rocket::response::Redirect;
 
 use rocket_db_pools::{Connection, Database, Initializer};
-use sqlx::Acquire;
+use sqlx::{Acquire, Error};
 
 #[derive(Database)]
 #[database("sqlx")]
@@ -120,7 +120,48 @@ impl Analytics {
     }
 }
 
-async fn log_request(request_data: RequestData, mut conn: Connection<Db>) {
+#[derive(Serialize, Debug)]
+pub struct Graphnode {
+    pub amount: u32,
+    pub timestamp_start: i64,
+    pub timestamp_end: i64
+}
+
+#[derive(Serialize, Debug)]
+pub struct GraphView {
+    pub timeline: Vec<Graphnode>,
+    pub title: String,
+}
+
+async fn get_graph(conn: &mut Connection<Db>, path_id: i32, duration: i64, title: String) -> Result<GraphView, Error> {
+    let cap = 20;
+    use std::time::SystemTime;
+
+    let time = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as i64;
+
+    let mut list = Vec::<Graphnode>::with_capacity(cap);
+
+    for i in (0..cap as i64).rev() {
+        let range_recent = time - (duration * i);
+        let range_oldest = time - (duration * (i+1));
+
+        let amount = sqlx::query!(
+            "SELECT COUNT(1) as count FROM requests WHERE path_id = $1 AND created_at <= $2  AND created_at > $3",
+            path_id, range_recent, range_oldest
+        )
+        .fetch_one(&mut ***conn)
+        .await?;
+
+        list.push(Graphnode{ amount: amount.count as u32, timestamp_start: range_oldest, timestamp_end: range_recent });
+    }
+
+    return Ok(GraphView{timeline: list, title});
+}
+
+async fn log_request(request_data: RequestData, conn: Connection<Db>) {
 
     use std::time::SystemTime;
 
@@ -323,6 +364,53 @@ async fn visits_path(mut db: Connection<Db>, path: String) -> Result<Json<Visits
     }
 }
 
+use std::time::Duration;
+
+trait DurationExt {
+    fn from_hours(hours: u64) -> Duration;
+    fn from_mins(mins: u64) -> Duration;
+    fn from_days(days: u64) -> Duration;
+}
+
+impl DurationExt for Duration {
+    fn from_hours(hours: u64) -> Duration {
+        Duration::from_secs(hours * 60 * 60)
+    }
+    fn from_mins(mins: u64) -> Duration {
+        Duration::from_secs(mins * 60)
+    }
+    
+    fn from_days(days: u64) -> Duration {
+        Duration::from_secs(days * 60 * 60 * 24)
+    }
+}
+
+#[get("/path/id/<id>")]
+async fn path_view(mut conn: Connection<Db>, id: u32) -> Result<Template, Status> {
+    use std::time::Duration;
+
+    
+
+    let duration = Duration::from_mins(30).as_millis();
+    let half_hourly = get_graph(&mut conn, id as i32, duration as i64, "Half Hourly".to_string()).await.unwrap();
+    dbg!(&half_hourly);
+    
+    dbg!("good");
+
+    let duration = Duration::from_days(1).as_millis();
+    let daily = get_graph(&mut conn, id as i32, duration as i64, "Daily".to_string()).await.unwrap();
+
+    dbg!("good2");
+
+    let duration = Duration::from_days(30).as_millis();
+    let monthly = get_graph(&mut conn, id as i32, duration as i64, "Monthly (30 days)".to_string()).await.unwrap();
+
+    dbg!("good3");
+
+    let x = vec![half_hourly, daily, monthly];
+    return Ok(Template::render("analytics/path", context! { graphs: x }));
+}
+
 #[get("/<page>")]
 async fn analytics_page_view(mut db: Connection<Db>, page: u32) -> Result<Template, Status> {
 
@@ -364,5 +452,5 @@ fn analytics_index() -> Redirect {
 }
 
 pub fn routes() -> Vec<rocket::Route> {
-    routes![analytics_index, visits_path, visits_id, analytics_page_view,]
+    routes![analytics_index, visits_path, visits_id, analytics_page_view, path_view]
 }
